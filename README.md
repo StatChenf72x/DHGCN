@@ -1,26 +1,59 @@
-# DHGCN
-
-Official PyTorch implementation of the DHGCN model for drug repositioning.
+# DHGCN: A Topology‑Driven Multivariate Entity Association Identification Model for Drug Repositioning via Decoupled Hypergraph Convolution
 
 ## Requirements
 
-To run this code, please ensure you have the following environments installed:
-- Python >= 3.8
-- PyTorch >= 1.12.0
-- torch_geometric
-- pandas
-- numpy
-- scikit-learn
-- matplotlib
+```
+python>=3.9
+torch>=2.0
+torch_geometric
+numpy
+pandas
+scipy
+matplotlib
+```
 
-## Repository Structure
+## Data Description
 
-- `main.py`: The complete DHGCN framework. Run this script for the full model training and evaluation.
-- `data/`: Directory containing the processed DGD dataset splits (train, validation, and test).
+- `Data/`: Standard original dataset, contains train_14400.csv, val_14400.csv, test_14400.csv.
+- `cold_start_Data/`: Datasets for cold‑start settings, includes drug_cold, disease_cold, double_cold splits.
+- `imbalanced_test_Data/`: Pre‑processed test subsets under different positive‑negative ratios for class imbalance analysis.
 
 ## Usage
 
-To train and evaluate the full model, simply execute:
+### Main Model
 
-```bash
+```
 python main.py
+```
+
+### Validation with a Parameter‑free Rule Baseline
+
+```
+python rule_baseline.py
+```
+
+### Cold‑start Experiments
+
+Modify dataset file paths inside main.py to point to corresponding folders under cold_start_Data before running.
+
+```
+python main.py
+```
+
+### Class Imbalance Sensitivity Analysis
+
+```
+python run_sensitivity.py
+```
+
+### Mode‑level Attribution
+
+```
+python run_attribution.py
+```
+
+### Perturbation Analysis
+
+```
+python run_perturbation.py
+```
