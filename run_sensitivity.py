@@ -164,18 +164,13 @@ def load_df(path):
     return df
 
 def compute_metrics(labels, preds, probs, num_classes):
-    metrics = {
-        "ACC": accuracy_score(labels, preds),
-        "PRE": precision_score(labels, preds, average='macro', zero_division=0),
-        "REC": recall_score(labels, preds, average='macro', zero_division=0),
-        "F1": f1_score(labels, preds, average='macro', zero_division=0)
-    }
+    y_oh = OneHotEncoder(sparse_output=False, categories=[range(num_classes)]).fit_transform(
+        np.array(labels).reshape(-1, 1))
+    metrics = {}
     try:
-        y_oh = OneHotEncoder(sparse_output=False, categories=[range(num_classes)]).fit_transform(
-            np.array(labels).reshape(-1, 1))
         metrics["AUC"] = roc_auc_score(y_oh, np.array(probs), multi_class="ovr", average="macro")
         metrics["AUPR"] = average_precision_score(y_oh, np.array(probs), average="macro")
-    except:
+    except Exception:
         metrics["AUC"], metrics["AUPR"] = 0.0, 0.0
     return metrics
 
@@ -219,7 +214,7 @@ def main():
     all_results = {}
 
     for ratio in ratios:
-        print(f"\n{'='*25} 负采样比例 1:{ratio[3:]} {'='*25}")
+        print(f"\n{'='*25} Negative sampling ratio 1:{ratio[3:]} {'='*25}")
         df_test = pd.read_csv(os.path.join(IMBALANCED_DIR, f"test_{ratio}.csv"))
         cols = df_test.columns
         df_test = df_test[[cols[0], cols[1], cols[2], cols[-1]]].copy()
@@ -228,7 +223,7 @@ def main():
 
         n_pos = (df_test["label"] != 9).sum()
         n_neg = (df_test["label"] == 9).sum()
-        print(f"  测试集: 总={len(df_test)}, 正={n_pos}, 负={n_neg}")
+        print(f"  Test set: total={len(df_test)}, pos={n_pos}, neg={n_neg}")
 
         for _, r in df_test.iterrows():
             for c in ['drug', 'gene', 'disease']:
@@ -238,8 +233,8 @@ def main():
         test_loader = get_loader(df_test, False)
 
         run_results = []
-        for run in range(2):
-            print(f"\n  --- Run {run+1}/2 ---")
+        for run in range(5):
+            print(f"\n  --- Run {run+1}/5 ---")
             set_seed(42 + run)
             model = DHGCN(len(node_to_idx), args.embedding_dim, args.hidden_dim, args.num_classes,
                           he_list, args.num_heads, args.alpha_hgcn, args.dropout).to(args.device)
@@ -270,10 +265,10 @@ def main():
                         val_trues.extend(labels.cpu().numpy())
                         val_probs.extend(F.softmax(logits, 1).cpu().numpy())
                 val_metrics = compute_metrics(val_trues, val_preds, val_probs, args.num_classes)
-                val_acc = val_metrics["ACC"]
+                val_acc = accuracy_score(val_trues, val_preds)
                 scheduler.step(train_loss / len(train_loader))
 
-                print(f"Epoch {epoch+1}: Val ACC={val_acc:.4f} | AUPR={val_metrics['AUPR']:.4f} | F1={val_metrics['F1']:.4f}")
+                print(f"Epoch {epoch+1}: Val ACC={val_acc:.4f} | AUPR={val_metrics['AUPR']:.4f} | AUC={val_metrics['AUC']:.4f}")
 
                 if val_acc - best_val_acc > args.min_improvement:
                     best_val_acc = val_acc; best_weights = model.state_dict(); patience_cnt = 0
@@ -286,17 +281,21 @@ def main():
             if best_weights: model.load_state_dict(best_weights)
             metrics = evaluate(model, test_loader, args.num_classes, args.device)
             run_results.append(metrics)
-            print(f"  Run {run+1} Test: ACC={metrics['ACC']:.4f} AUPR={metrics['AUPR']:.4f} F1={metrics['F1']:.4f} AUC={metrics['AUC']:.4f}")
+            print(f"  Run {run+1} Test: AUPR={metrics['AUPR']:.4f} AUC={metrics['AUC']:.4f}")
 
-        mean_metrics = {k: np.mean([r[k] for r in run_results]) for k in run_results[0]}
-        std_metrics = {k: np.std([r[k] for r in run_results]) for k in run_results[0]}
-        all_results[f"1:{ratio[3:]}"] = {k: f"{mean_metrics[k]:.4f} ± {std_metrics[k]:.4f}" for k in mean_metrics}
+        pos_ratio = n_pos / (n_pos + n_neg)
+        norm_aupr = [r["AUPR"] / pos_ratio for r in run_results]
+        auc_vals = [r["AUC"] for r in run_results]
+        all_results[f"1:{ratio[3:]}"] = {
+            "Normalized_AUPR": f"{np.mean(norm_aupr):.4f} ± {np.std(norm_aupr):.4f}",
+            "AUC": f"{np.mean(auc_vals):.4f} ± {np.std(auc_vals):.4f}",
+        }
         print(f"  Mean±Std: " + " | ".join(f"{k}={v}" for k, v in all_results[f"1:{ratio[3:]}"].items()))
 
-    df_res = pd.DataFrame(all_results).T[["ACC", "PRE", "AUPR", "REC", "F1", "AUC"]]
+    df_res = pd.DataFrame(all_results).T[["Normalized_AUPR", "AUC"]]
     out_path = os.path.join(BASE_DIR, "class_imbalance_sensitivity_results.csv")
     df_res.to_csv(out_path, encoding="utf-8-sig")
-    print(f"\n结果保存到: {out_path}")
+    print(f"\nResults saved to: {out_path}")
     print(df_res)
 
 if __name__ == "__main__":
